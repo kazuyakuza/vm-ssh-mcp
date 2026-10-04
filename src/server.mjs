@@ -14,7 +14,7 @@ const registerTools = (server, config) => {
       description:
         "Check whether the Alpine VirtualBox VM is running and SSH reachable. ALWAYS call this before vm_run_command.",
     },
-    async () => statusToolResult(),
+    statusToolResult,
   );
   server.registerTool(
     "vm_run_command",
@@ -26,7 +26,7 @@ const registerTools = (server, config) => {
         timeoutMs: z.number().int().positive().optional(),
       }),
     },
-    async (args) => runCommandToolResult(args),
+    runCommandToolResult,
   );
 };
 

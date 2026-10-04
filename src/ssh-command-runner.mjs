@@ -34,7 +34,12 @@ const buildOutcome = ({ buffers, code }) => ({
   exitCode: resolveExitCode(code),
 });
 
-const attachStreamHandlers = ({ stream, connection, settlers }) => {
+const handleExecOpened = ({ connection, settlers, config, error, stream }) => {
+  if (error) {
+    connection.end();
+    settlers.reject(mapConnectionError(error, config));
+    return;
+  }
   const buffers = { stdout: [], stderr: [] };
   stream.on("data", (chunk) => buffers.stdout.push(chunk));
   stream.on("stderr", (chunk) => buffers.stderr.push(chunk));
@@ -42,16 +47,6 @@ const attachStreamHandlers = ({ stream, connection, settlers }) => {
     connection.end();
     settlers.resolve(buildOutcome({ buffers, code }));
   });
-};
-
-const handleExecOpened = (context) => {
-  const { error, stream } = context;
-  if (error) {
-    context.connection.end();
-    context.settlers.reject(mapConnectionError(error, context.config));
-    return;
-  }
-  attachStreamHandlers(context);
 };
 
 const startExec = (context) => {

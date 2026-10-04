@@ -9,6 +9,8 @@ const WINDOWS_DEFAULT_VBOXMANAGE_PATH =
 
 const POWEROFF_STATE_TOKENS = ["poweroff", "saved", "aborted", "paused"];
 
+const VM_STATE_LINE_PREFIX = "vmstate=";
+
 export const VBOX_PROBE_TIMEOUT_MS = 5000;
 
 export const resolveVBoxManagePath = (config) => {
@@ -24,11 +26,11 @@ export const resolveVBoxManagePath = (config) => {
 const parseVmStateToken = (output) => {
   const vmStateLine = output
     .split(/\r?\n/)
-    .find((line) => line.toLowerCase().startsWith("vmstate="));
+    .find((line) => line.toLowerCase().startsWith(VM_STATE_LINE_PREFIX));
   if (vmStateLine === undefined) {
     return "";
   }
-  return vmStateLine.slice(8).replaceAll('"', "").trim();
+  return vmStateLine.slice(VM_STATE_LINE_PREFIX.length).replaceAll('"', "").trim();
 };
 
 const mapVmStateToken = (token) => {
