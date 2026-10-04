@@ -40,10 +40,26 @@ const recordResponse = (results, message) => {
   if (message?.id === undefined) {
     return;
   }
+  if (message.error !== undefined) {
+    results.set(message.id, { jsonRpcError: message.error });
+    return;
+  }
   if (message.result === undefined) {
     return;
   }
   results.set(message.id, message.result);
+};
+
+const recordIfNonEmpty = (results, line) => {
+  if (line.trim().length > 0) {
+    recordResponse(results, parseJsonLine(line));
+  }
+};
+
+const processLines = (results, lines) => {
+  for (const line of lines) {
+    recordIfNonEmpty(results, line);
+  }
 };
 
 const createLineProcessor = (results) => {
@@ -51,9 +67,7 @@ const createLineProcessor = (results) => {
   return (chunk) => {
     const lines = (remainder + chunk).split(/\r?\n/);
     remainder = lines.pop() ?? "";
-    lines
-      .filter((line) => line.trim().length > 0)
-      .forEach((line) => recordResponse(results, parseJsonLine(line)));
+    processLines(results, lines);
   };
 };
 
@@ -100,6 +114,9 @@ const hasExpectedTools = (toolNames) =>
 const isStatusTextAcceptable = (statusText) =>
   statusText.length > 0 && STATUS_TEXT_PATTERN.test(statusText);
 
+const findJsonRpcError = (results) =>
+  [...results.values()].find((value) => value?.jsonRpcError !== undefined)?.jsonRpcError;
+
 const evaluateResults = (results) => {
   const serverName = results.get(1)?.serverInfo?.name ?? "";
   const toolNames = readToolNames(results.get(2));
@@ -108,6 +125,7 @@ const evaluateResults = (results) => {
     serverName,
     toolNames,
     statusText,
+    jsonRpcError: findJsonRpcError(results),
     initializePassed: serverName === "vm-ssh-mcp",
     toolsPassed: hasExpectedTools(toolNames),
     statusPassed: isStatusTextAcceptable(statusText),
@@ -115,7 +133,12 @@ const evaluateResults = (results) => {
 };
 
 const allChecksPassed = (report) =>
-  [report.initializePassed, report.toolsPassed, report.statusPassed].every(Boolean);
+  [
+    report.initializePassed,
+    report.toolsPassed,
+    report.statusPassed,
+    report.jsonRpcError === undefined,
+  ].every(Boolean);
 
 const formatVerdict = (passed) => (passed ? "PASS" : "FAIL");
 
@@ -129,6 +152,9 @@ const printReport = (report) => {
   console.log(
     `vm_status  -> ${report.statusText.split("\n").join(" | ")} [${formatVerdict(report.statusPassed)}]`,
   );
+  if (report.jsonRpcError !== undefined) {
+    console.log(`jsonrpc error -> ${JSON.stringify(report.jsonRpcError)} [FAIL]`);
+  }
   console.log(allChecksPassed(report) ? "SMOKE TEST PASS" : "SMOKE TEST FAIL");
 };
 
