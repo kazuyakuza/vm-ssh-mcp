@@ -121,9 +121,9 @@ All configuration is read from environment variables at startup.
 - Password: `VM_SSH_PASSWORD` has no default and the process refuses to start without it (`VM_SSH_PASSWORD is required — set it in the MCP environment configuration`).
 - Allowlist: for example, `VM_ALLOWED_PREFIXES=docker,sh,apk` restricts agents to those three prefixes; matching is case-sensitive and prefix-based (see [Security notes](#security-notes)).
 
-## Running with opencode
+## Running with opencode (example)
 
-1. The server is registered in the global opencode config at `C:\Users\ibej_\.config\opencode\opencode.jsonc`, inside the existing `mcp` object, under the name `alpine-vm`. It ships **disabled**.
+1. The server is registered in the global opencode config at `C:\Users\<user-name>\.config\opencode\opencode.jsonc`, inside the existing `mcp` object, under the name `alpine-vm`. It ships **disabled**.
 2. The registered block, verbatim:
 
 ```jsonc
