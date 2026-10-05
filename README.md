@@ -44,7 +44,6 @@ Checks VM state; takes no arguments. Every result starts with the combined statu
 
 | State | Reported text |
 |---|---|
-| First line, any state | `vmState: <running\|poweroff\|unknown> \| sshReachable: <true\|false>` |
 | `poweroff` | `VM 'alpine-virt-3.21.2-x86_64' is not running — start it in VirtualBox first.` |
 | `unknown` | `Could not determine VM state — VBoxManage probe failed or was skipped.` |
 | `running`, SSH up | `SSH reachable on 127.0.0.1:3022 — ready for commands.` |
@@ -91,7 +90,7 @@ Allowed command `docker ps`. The exit code 0 and the standard `docker ps` header
 ```text
 exit code: 0
 stdout:
-CONTAINER ID   IMAGE   COMMAND   CREATED STATUS   PORTS   NAMES
+CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES
 ...
 stderr:
 ```
