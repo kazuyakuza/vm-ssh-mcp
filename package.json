@@ -1,13 +1,15 @@
 {
   "name": "vm-ssh-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server exposing the Alpine Linux VirtualBox VM over SSH: status check plus allowlisted commands",
   "type": "module",
   "private": true,
   "main": "src/server.mjs",
   "scripts": {
     "start": "node src/server.mjs",
-    "smoke-test": "node scripts/smoke-test.mjs"
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "smoke-test": "node scripts/smoke-test.mjs",
+    "regression": "node scripts/regression-test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.0",

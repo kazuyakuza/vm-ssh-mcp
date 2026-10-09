@@ -1,5 +1,7 @@
 import { Client } from "ssh2";
 
+const FALLBACK_OUTPUT_LIMIT_CHARS = 10000;
+
 const buildConnectOptions = (config) => ({
   host: config.sshHost,
   port: config.sshPort,
@@ -28,24 +30,59 @@ const createSettlers = ({ guard, resolve, reject }) => ({
   },
 });
 
-const buildOutcome = ({ buffers, code }) => ({
-  stdout: Buffer.concat(buffers.stdout).toString("utf8"),
-  stderr: Buffer.concat(buffers.stderr).toString("utf8"),
-  exitCode: resolveExitCode(code),
+const createCapture = (limit) => ({
+  limit,
+  channels: {
+    stdout: { value: "", truncated: false },
+    stderr: { value: "", truncated: false },
+  },
+  sequence: [],
 });
 
-const handleExecOpened = ({ connection, settlers, config, error, stream }) => {
+const recordChunk = (capture, channel, chunk) => {
+  const target = capture.channels[channel];
+  if (target.truncated || chunk.length === 0) {
+    return;
+  }
+  const remaining = capture.limit - target.value.length;
+  const kept = chunk.length <= remaining ? chunk : chunk.slice(0, remaining);
+  target.value += kept;
+  if (kept.length < chunk.length) {
+    target.truncated = true;
+  }
+  capture.sequence.push(kept);
+};
+
+const buildOutcome = (capture, { code, timedOut = false }) => ({
+  exitCode: timedOut ? null : resolveExitCode(code),
+  timedOut,
+  stdout: capture.channels.stdout.value,
+  stderr: capture.channels.stderr.value,
+  combinedOutput: capture.sequence.join(""),
+  stdoutTruncated: capture.channels.stdout.truncated,
+  stderrTruncated: capture.channels.stderr.truncated,
+  outputLimitChars: capture.limit,
+});
+
+const attachStreamCapture = (capture, stream) => {
+  stream.setEncoding("utf8");
+  stream.on("data", (chunk) => recordChunk(capture, "stdout", chunk));
+  if (stream.stderr) {
+    stream.stderr.setEncoding("utf8");
+    stream.stderr.on("data", (chunk) => recordChunk(capture, "stderr", chunk));
+  }
+};
+
+const handleExecOpened = ({ connection, settlers, config, capture, error, stream }) => {
   if (error) {
     connection.end();
     settlers.reject(mapConnectionError(error, config));
     return;
   }
-  const buffers = { stdout: [], stderr: [] };
-  stream.on("data", (chunk) => buffers.stdout.push(chunk));
-  stream.on("stderr", (chunk) => buffers.stderr.push(chunk));
+  attachStreamCapture(capture, stream);
   stream.on("close", (code) => {
     connection.end();
-    settlers.resolve(buildOutcome({ buffers, code }));
+    settlers.resolve(buildOutcome(capture, { code }));
   });
 };
 
@@ -65,15 +102,16 @@ const attachConnectionHandlers = (context) => {
   context.connection.on("error", (error) => rejectConnection({ ...context, error }));
 };
 
-export const runSshCommand = (config, command) =>
+export const runSshCommand = (config, command, { clientFactory = () => new Client() } = {}) =>
   new Promise((resolve, reject) => {
-    const connection = new Client();
+    const connection = clientFactory();
+    const capture = createCapture(config.outputLimitChars ?? FALLBACK_OUTPUT_LIMIT_CHARS);
     const guard = setTimeout(() => {
       connection.end();
-      reject(new Error(`Command timed out after ${config.commandTimeoutMs} ms`));
+      settlers.resolve(buildOutcome(capture, { code: null, timedOut: true }));
     }, config.commandTimeoutMs);
     const settlers = createSettlers({ guard, resolve, reject });
-    attachConnectionHandlers({ connection, config, command, settlers });
+    attachConnectionHandlers({ connection, config, command, capture, settlers });
     connection.connect(buildConnectOptions(config));
   });
 

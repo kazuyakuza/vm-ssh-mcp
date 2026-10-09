@@ -2,10 +2,18 @@ import { isCommandAllowed } from "./command-policy.mjs";
 import { queryVmState } from "./vm-state-probe.mjs";
 import { probeSsh, runSshCommand } from "./ssh-command-runner.mjs";
 
-const OUTPUT_LIMIT = 10000;
+const EMPTY_MARKER = "<empty>";
+
+const DEFAULT_DEPS = Object.freeze({ queryVmState, probeSsh, runSshCommand });
 
 const textResult = (text, isError = false) => ({
   content: [{ type: "text", text }],
+  isError,
+});
+
+const structuredResult = (text, structuredContent, isError) => ({
+  content: [{ type: "text", text }],
+  structuredContent,
   isError,
 });
 
@@ -16,8 +24,8 @@ const buildRunningMessage = (sshReachable, config) => {
   return `VM '${config.vboxName}' is running but SSH is not reachable on ${config.sshHost}:${config.sshPort}.`;
 };
 
-const buildStatusReport = async (config) => {
-  const vmState = await queryVmState(config);
+const buildStatusReport = async (config, deps) => {
+  const vmState = await deps.queryVmState(config);
   if (vmState === "poweroff") {
     return {
       vmState,
@@ -32,24 +40,24 @@ const buildStatusReport = async (config) => {
       message: "Could not determine VM state — VBoxManage probe failed or was skipped.",
     };
   }
-  const sshReachable = await probeSsh(config);
+  const sshReachable = await deps.probeSsh(config);
   return { vmState, sshReachable, message: buildRunningMessage(sshReachable, config) };
 };
 
 const formatStatusText = (report) =>
   `vmState: ${report.vmState} | sshReachable: ${report.sshReachable}\n${report.message}`;
 
-export const createVmStatusTool = (config) => async () => {
-  const report = await buildStatusReport(config);
+export const createVmStatusTool = (config, deps = DEFAULT_DEPS) => async () => {
+  const report = await buildStatusReport(config, deps);
   return textResult(formatStatusText(report));
 };
 
-const findGateFailure = async (args, config) => {
-  const vmState = await queryVmState(config);
+const findGateFailure = async (args, config, deps) => {
+  const vmState = await deps.queryVmState(config);
   if (vmState !== "running") {
     return "VM not running — run vm_status for details and start the VM in VirtualBox first.";
   }
-  const sshReachable = await probeSsh(config);
+  const sshReachable = await deps.probeSsh(config);
   if (!sshReachable) {
     return `SSH not reachable on ${config.sshHost}:${config.sshPort}.`;
   }
@@ -59,38 +67,61 @@ const findGateFailure = async (args, config) => {
   return `Command rejected: '${args.command}' does not match allowed prefixes [${config.allowedPrefixes.join(", ")}].`;
 };
 
-const truncateOutput = (output) => {
-  if (output.length <= OUTPUT_LIMIT) {
-    return output;
+const renderChannel = (value, truncated, limit) => {
+  if (value.length === 0) {
+    return EMPTY_MARKER;
   }
-  return `${output.slice(0, OUTPUT_LIMIT)}… [truncated]`;
+  return truncated ? `${value}… [truncated at ${limit} chars]` : value;
 };
 
-const reportOutcome = (outcome) => {
-  const text = [
-    `exit code: ${outcome.exitCode}`,
+const formatOutcomeText = (outcome, config) => {
+  const lines = [
+    `exit code: ${outcome.exitCode ?? "none"}`,
     "stdout:",
-    truncateOutput(outcome.stdout),
+    renderChannel(outcome.stdout, outcome.stdoutTruncated, outcome.outputLimitChars),
     "stderr:",
-    truncateOutput(outcome.stderr),
-  ].join("\n");
-  return textResult(text, outcome.exitCode !== 0);
+    renderChannel(outcome.stderr, outcome.stderrTruncated, outcome.outputLimitChars),
+    "combined output:",
+    renderChannel(outcome.combinedOutput, false, outcome.outputLimitChars),
+  ];
+  if (outcome.timedOut) {
+    lines.push(`command timed out after ${config.commandTimeoutMs} ms — captured partial output above`);
+  }
+  return lines.join("\n");
 };
 
-const executeAllowedCommand = async (args, config) => {
+const buildStructuredContent = (outcome) => ({
+  exitCode: outcome.exitCode,
+  stdout: outcome.stdout,
+  stderr: outcome.stderr,
+  combinedOutput: outcome.combinedOutput,
+  stdoutTruncated: outcome.stdoutTruncated,
+  stderrTruncated: outcome.stderrTruncated,
+  outputLimitChars: outcome.outputLimitChars,
+  timedOut: outcome.timedOut,
+});
+
+const reportOutcome = (outcome, config) =>
+  structuredResult(
+    formatOutcomeText(outcome, config),
+    buildStructuredContent(outcome),
+    outcome.exitCode !== 0,
+  );
+
+const executeAllowedCommand = async (args, config, deps) => {
   const derivedConfig = { ...config, commandTimeoutMs: args.timeoutMs ?? config.commandTimeoutMs };
   try {
-    const outcome = await runSshCommand(derivedConfig, args.command);
-    return reportOutcome(outcome);
+    const outcome = await deps.runSshCommand(derivedConfig, args.command);
+    return reportOutcome(outcome, derivedConfig);
   } catch (error) {
     return textResult(`Command failed after start: ${error.message}`, true);
   }
 };
 
-export const createVmRunCommandTool = (config) => async (args) => {
-  const gateFailure = await findGateFailure(args, config);
+export const createVmRunCommandTool = (config, deps = DEFAULT_DEPS) => async (args) => {
+  const gateFailure = await findGateFailure(args, config, deps);
   if (gateFailure) {
     return textResult(gateFailure, true);
   }
-  return executeAllowedCommand(args, config);
+  return executeAllowedCommand(args, config, deps);
 };

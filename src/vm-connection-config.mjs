@@ -7,6 +7,7 @@ const DEFAULTS = Object.freeze({
   allowedPrefixes: "docker,sh,apk,ls,cat,ps,df,free,uname,pwd,whoami",
   commandTimeoutMs: 30000,
   sshReadyTimeoutMs: 5000,
+  outputLimitChars: 10000,
 });
 
 const isPositiveInteger = (value) => Number.isInteger(value) && value > 0;
@@ -51,5 +52,9 @@ export const createVmConnectionConfig = (environment = process.env) =>
     sshReadyTimeoutMs: parsePositiveInteger(
       environment.VM_SSH_READY_TIMEOUT_MS ?? DEFAULTS.sshReadyTimeoutMs,
       "VM_SSH_READY_TIMEOUT_MS",
+    ),
+    outputLimitChars: parsePositiveInteger(
+      environment.VM_OUTPUT_LIMIT_CHARS ?? DEFAULTS.outputLimitChars,
+      "VM_OUTPUT_LIMIT_CHARS",
     ),
   });
